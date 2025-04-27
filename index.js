@@ -1,38 +1,41 @@
 const express = require('express');
-const axios = require('axios');
-const cheerio = require('cheerio');
 const cors = require('cors');
+const puppeteer = require('puppeteer');
 
 const app = express();
 app.use(cors());
 
 app.get('/', async (req, res) => {
   try {
-    const url = 'https://fpprotr.com/cihazimi-tamir-et/iphone-serileri/iphone-16-serisi/';
-    const { data } = await axios.get(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.85 Safari/537.36'
-      }
+    const browser = await puppeteer.launch({
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
-    const $ = cheerio.load(data);
+    const page = await browser.newPage();
+    await page.goto('https://fpprotr.com/cihazimi-tamir-et/iphone-serileri/iphone-16-serisi/', {
+      waitUntil: 'networkidle2'
+    });
 
-    const fiyatlar = {};
-
-    $('.elementor-widget-container').each((i, el) => {
-      const modelIsmi = $(el).find('h2, h3').text().trim();
-      const fiyatText = $(el).text();
-
-      if (modelIsmi && fiyatText.includes('₺')) {
-        const fiyatMatch = fiyatText.match(/([\d.,]+)\s*₺/);
-        if (fiyatMatch && fiyatMatch[1]) {
-          const fiyat = parseFloat(fiyatMatch[1].replace('.', '').replace(',', '.'));
-          if (!isNaN(fiyat)) {
-            fiyatlar[modelIsmi] = fiyat;
+    const fiyatlar = await page.evaluate(() => {
+      const items = document.querySelectorAll('.elementor-widget-container');
+      const result = {};
+      items.forEach(item => {
+        const modelElement = item.querySelector('h2, h3');
+        if (modelElement) {
+          const modelIsmi = modelElement.innerText.trim();
+          const text = item.innerText;
+          const fiyatMatch = text.match(/([\d.,]+)\s*₺/);
+          if (fiyatMatch && fiyatMatch[1]) {
+            const fiyat = parseFloat(fiyatMatch[1].replace('.', '').replace(',', '.'));
+            if (!isNaN(fiyat)) {
+              result[modelIsmi] = fiyat;
+            }
           }
         }
-      }
+      });
+      return result;
     });
 
+    await browser.close();
     res.json(fiyatlar);
 
   } catch (error) {
